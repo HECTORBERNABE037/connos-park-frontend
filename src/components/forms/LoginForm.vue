@@ -13,9 +13,9 @@
         </div>
         <div v-if="error" class="error-message">{{ error }}</div>
         <button type="submit" class="btn-primary">Iniciar Sesión</button>
-        <button type="button" class="btn-secondary" @click="toForgotPassword">
-          ¿Olvidaste tu contraseña?
-        </button>
+        <router-link :to="{ name: 'PasswordReset' }" class="btn-secondary link-button">
+        ¿Olvidaste tu contraseña?
+        </router-link>
       </form>
       <p class="terms">By registering you with our <a href="#">Terms and Conditions</a></p>
     </div>
@@ -55,9 +55,6 @@ async function handleLogin() {
   }
 }
 
-function toForgotPassword() {
-  router.push('/forgot-password')
-}
 </script>
 
 <style scoped>
@@ -170,4 +167,26 @@ h2 {
     width: 75px;
   }
 }
+
+.link-button {
+  display: block;            /* Se comporta como una caja, no como texto */
+  width: 100%;               /* Ocupa todo el ancho */
+  box-sizing: border-box;    /* El padding no deforma el tamaño */
+  text-decoration: none;     /* QUITA EL SUBRAYADO FEO */
+  text-align: center;        /* Centra el texto */
+  margin-top: 10px;          /* Separación con el botón de arriba */
+  color: #fff !important;    /* Fuerza el color blanco del texto */
+  
+  /* Aseguramos que herede las propiedades del botón si alguna falló */
+  padding: 14px 0;
+  border-radius: 7px;
+  font-size: 1.12rem;
+  font-weight: bold;
+}
+
+/* Efecto al pasar el mouse */
+.link-button:hover {
+  filter: brightness(1.1); 
+}
+
 </style>

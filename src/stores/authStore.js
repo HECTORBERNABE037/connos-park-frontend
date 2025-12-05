@@ -11,7 +11,7 @@ export const useAuthStore = defineStore('auth', () => {
   const error = ref(null)
 
   const isAuthenticated = computed(() => !!token.value)
-  const userRole = computed(() => user.value?.rol || null)
+  const userRole = computed(() => user.value?.rol_nombre || null)
   const isAdmin = computed(() => userRole.value === 'Administrador')
   const isAccountant = computed(() => userRole.value === 'Contador')
   const isManager = computed(() => userRole.value === 'Encargado')

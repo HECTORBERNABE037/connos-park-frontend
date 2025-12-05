@@ -1,8 +1,15 @@
 <template>
   <div class="operaciones-container">
-    <h2>Operaciones y Control</h2>
+    <div class="header-section">
+      <h2>Operaciones y Control</h2>
+      <button class="btn-primary" @click="showRegistrarCajon = true">
+        + Agregar Cajón
+      </button>
+    </div>
     
-    <div class="table-card">
+    <div v-if="loading" class="loading-text">Cargando mapa de operaciones...</div>
+
+    <div v-else class="table-card">
       <table class="custom-table">
         <thead>
           <tr>
@@ -13,16 +20,18 @@
           </tr>
         </thead>
         <tbody>
-          <tr v-for="cajon in cajones" :key="cajon.id">
-            <td class="cajon-id">{{ cajon.id }}</td>
+          <tr v-for="item in mapaCajones" :key="item.cajon.id">
+            <td class="cajon-id">{{ item.cajon.numero }}</td>
             <td>
-              <span :class="['status-badge', cajon.estadoClass]">
-                {{ cajon.estado }}
+              <span :class="['status-badge', getEstadoClass(item)]">
+                {{ getEstadoLabel(item) }}
               </span>
             </td>
-            <td class="asignacion">{{ cajon.asignacion }}</td>
+            <td class="asignacion">
+              {{ item.clienteNombre || '---' }}
+            </td>
             <td>
-              <button class="btn-action" @click="abrirAcciones(cajon)">🔧</button>
+              <button class="btn-action" @click="abrirAcciones(item)">🔧</button>
             </td>
           </tr>
         </tbody>
@@ -31,90 +40,154 @@
 
     <AccionesModal 
       v-if="showAcciones" 
-      :data="cajonSeleccionado"
-      @close="showAcciones = false"
-      @guardar="actualizarCajon"
+      :data="itemSeleccionado"
+      @close="cerrarAcciones"
+      @guardar="handleGuardarCambios"
       @open-payment="abrirPago"
     />
 
-    <PagoModal v-if="showPago" @close="showPago = false" />
+    <PagoModal 
+      v-if="showPago" 
+      :contrato-id="itemSeleccionado?.contrato?.id"
+      @close="showPago = false" 
+      @pago-registrado="handlePagoExitoso"
+    />
+
+    <RegistrarCajonModal
+      v-if="showRegistrarCajon"
+      @close="showRegistrarCajon = false"
+      @cajon-creado="handleCajonCreado"
+    />
+
   </div>
 </template>
 
 <script setup>
-import { ref } from 'vue';
+import { ref, onMounted, computed } from 'vue';
+import operacionesService from '@/services/operacionesService';
+import contratoService from '@/services/contratoService';
+import clientService from '@/services/clientService';
 import AccionesModal from './AccionesModal.vue';
 import PagoModal from './PagoModal.vue';
+import RegistrarCajonModal from './RegistrarCajonModal.vue'; // Importar el nuevo modal
 
-// Datos iniciales (Simulación de BD)
-const cajones = ref([
-  { id: 10, estado: 'Ocupado', estadoClass: 'ocupado', asignacion: 'Juan Perez Rodriguez', contratoActivo: true, esFuncional: true },
-  { id: 20, estado: 'Ocupado', estadoClass: 'ocupado', asignacion: 'Maria Lopez Salgado', contratoActivo: true, esFuncional: true },
-  { id: 40, estado: 'Libre', estadoClass: 'libre', asignacion: '', contratoActivo: false, esFuncional: true },
-  { id: 50, estado: 'Mantenimiento', estadoClass: 'mantenimiento', asignacion: '', contratoActivo: false, esFuncional: false },
-]);
+// ... (Tus variables existentes: loading, rawCajones, etc.) ...
+const loading = ref(true);
+const rawCajones = ref([]);
+const rawContratos = ref([]);
+const rawClientes = ref([]);
 
 const showAcciones = ref(false);
 const showPago = ref(false);
-const cajonSeleccionado = ref(null);
+const showRegistrarCajon = ref(false); // Nueva variable reactiva
+const itemSeleccionado = ref(null);
 
-// Preparamos los datos para el modal
-const abrirAcciones = (cajon) => {
-  cajonSeleccionado.value = {
-    id: cajon.id, // ID interno para buscarlo después
-    cajonId: cajon.id, // Para mostrar el número
-    cliente: cajon.asignacion || 'Sin Asignar',
-    contratoActivo: cajon.contratoActivo,
-    esFuncional: cajon.esFuncional
-  };
-  showAcciones.value = true;
+// ... (Mantén tu función cargarDatos, onMounted y mapaCajones IGUAL) ...
+const cargarDatos = async () => {
+  /* ... tu código existente ... */
+  loading.value = true;
+  try {
+    const [resCajones, resContratos, resClientes] = await Promise.all([
+      operacionesService.getCajones(),
+      contratoService.getContratos(),
+      clientService.getClients()
+    ]);
+    rawCajones.value = resCajones.results || resCajones;
+    rawContratos.value = resContratos.results || resContratos;
+    rawClientes.value = resClientes.results || resClientes;
+  } catch (error) {
+    console.error(error);
+  } finally {
+    loading.value = false;
+  }
 };
 
+onMounted(() => { cargarDatos(); });
+
+const mapaCajones = computed(() => {
+  /* ... tu código existente ... */
+  return rawCajones.value.map(cajon => {
+    const contratoActivo = rawContratos.value.find(c => c.cajon === cajon.id && c.activo);
+    let clienteNombre = '';
+    if (contratoActivo) {
+      const cliente = rawClientes.value.find(cl => cl.id === contratoActivo.cliente);
+      clienteNombre = cliente ? cliente.nombre : 'Cliente Desconocido';
+    }
+    return {
+      cajon: cajon,
+      contrato: contratoActivo || null,
+      clienteNombre: clienteNombre
+    };
+  });
+});
+
+// ... (Tus helpers getEstadoClass, getEstadoLabel IGUAL) ...
+const getEstadoClass = (item) => {
+  if (item.cajon.estado === 'MANTENIMIENTO') return 'mantenimiento';
+  if (item.contrato) return 'ocupado';
+  return 'libre';
+};
+const getEstadoLabel = (item) => {
+  if (item.cajon.estado === 'MANTENIMIENTO') return 'Mantenimiento';
+  if (item.contrato) return 'Ocupado';
+  return 'Libre';
+};
+
+// ... (Tus funciones de modales existentes) ...
+const abrirAcciones = (item) => {
+  itemSeleccionado.value = item;
+  showAcciones.value = true;
+};
+const cerrarAcciones = () => {
+  showAcciones.value = false;
+  itemSeleccionado.value = null;
+};
 const abrirPago = () => {
   showPago.value = true;
 };
-
-// LÓGICA PRINCIPAL: Recibir cambios del modal y actualizar la tabla
-const actualizarCajon = (datosNuevos) => {
-  // 1. Encontramos el cajón en la lista
-  const index = cajones.value.findIndex(c => c.id === datosNuevos.id);
-  
-  if (index !== -1) {
-    const cajon = cajones.value[index];
-
-    // 2. Actualizamos sus propiedades internas
-    cajon.contratoActivo = datosNuevos.contratoActivo;
-    cajon.esFuncional = datosNuevos.esFuncional;
-    
-    // 3. Lógica de Estados (Determina el color y texto de la etiqueta)
-    if (!cajon.esFuncional) {
-      // Si el toggle de abajo está apagado -> Mantenimiento (Rojo Intenso)
-      cajon.estado = 'Mantenimiento';
-      cajon.estadoClass = 'mantenimiento';
-      cajon.asignacion = ''; // Se limpia asignación
-    } else if (cajon.contratoActivo) {
-      // Si funcional y contrato activo -> Ocupado (Verde)
-      cajon.estado = 'Ocupado';
-      cajon.estadoClass = 'ocupado';
-      // Aquí idealmente actualizarías el nombre si lo cambiaron en el select
-      cajon.asignacion = datosNuevos.cliente; 
-    } else {
-      // Si funcional pero contrato inactivo -> Libre (Rojo/Rosa)
-      cajon.estado = 'Libre';
-      cajon.estadoClass = 'libre';
-      cajon.asignacion = '';
-    }
-  }
-
-  // 4. Cerramos el modal
+const handleGuardarCambios = async () => {
+  await cargarDatos();
   showAcciones.value = false;
+};
+const handlePagoExitoso = () => {
+  showPago.value = false;
+};
+
+// --- NUEVA FUNCIÓN ---
+const handleCajonCreado = async () => {
+  await cargarDatos(); // Recargar la tabla para ver el nuevo cajón
+  showRegistrarCajon.value = false;
 };
 </script>
 
 <style scoped>
-/* ... Mismo CSS de la respuesta anterior ... */
+/* Agrega estos estilos para la cabecera */
+.header-section {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 30px;
+}
+
+.btn-primary {
+  background: #7C5CFF;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: bold;
+  font-size: 1rem;
+  transition: background 0.3s;
+}
+.btn-primary:hover {
+  background: #6a4be0;
+}
+
+/* ... (El resto de tus estilos anteriores) ... */
 .operaciones-container { padding: 20px; }
-h2 { font-size: 2rem; color: #333; margin-bottom: 30px; }
+h2 { font-size: 2rem; color: #333; margin: 0; } /* Ajusté margin porque ahora lo maneja header-section */
+.loading-text { text-align: center; color: #666; padding: 20px; }
 .table-card { background: white; border-radius: 15px; padding: 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.05); }
 .custom-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
 .custom-table th { text-align: left; padding: 15px; color: #666; font-weight: 600; border-bottom: 2px solid #f0f0f0; font-size: 1.1rem; }
@@ -125,7 +198,7 @@ h2 { font-size: 2rem; color: #333; margin-bottom: 30px; }
 .custom-table td { padding: 20px 15px; border-bottom: 1px solid #f9f9f9; color: #333; font-size: 1.2rem; vertical-align: middle; }
 .custom-table td:first-child { text-align: center; font-size: 1.5rem; color: #444; }
 .custom-table td:last-child { text-align: center; }
-.status-badge { display: inline-block; padding: 8px 20px; border-radius: 20px; color: white; font-size: 0.9rem; font-weight: bold; min-width: 100px; text-align: center; }
+.status-badge { display: inline-block; padding: 8px 20px; border-radius: 20px; color: white; font-size: 0.9rem; font-weight: bold; min-width: 120px; text-align: center; }
 .status-badge.ocupado { background-color: #4CAF50; }
 .status-badge.libre { background-color: #FF4081; }
 .status-badge.mantenimiento { background-color: #FF5252; }

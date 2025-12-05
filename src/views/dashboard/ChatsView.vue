@@ -1,216 +1,228 @@
 <template>
   <div class="chats-container">
-    <div class="card chat-card">
-      <div class="card-header">
-        <h3>Avisos Generales</h3>
-      </div>
+    <div class="header-section">
+      <h2>Avisos Generales</h2>
+    </div>
 
-      <div class="chat-history" ref="historyContainer">
-        
-        <div v-for="(grupo, index) in historial" :key="index" class="message-group">
-          
-          <div class="date-badge-container">
-            <span class="date-badge">{{ grupo.fecha }}</span>
-          </div>
-
-          <div v-for="msg in grupo.mensajes" :key="msg.id" class="message-bubble">
-            <p class="message-text">{{ msg.texto }}</p>
-            <span class="message-time">{{ msg.hora }}</span>
-          </div>
-
+    <div class="chat-history" ref="historyContainer">
+      
+      <div v-for="(grupo, index) in historialAgrupado" :key="index" class="message-group">
+        <div class="date-divider">
+          <span>{{ grupo.fecha }}</span>
         </div>
-
+        
+        <div v-for="msg in grupo.mensajes" :key="msg.id" class="message-card">
+          <div class="message-content">{{ msg.texto }}</div>
+          <div class="message-time">{{ msg.hora }}</div>
+        </div>
       </div>
 
-      <div class="divider"></div>
-
-      <div class="input-area">
-        <input 
-          type="text" 
-          v-model="nuevoMensaje" 
-          placeholder="Escribe un mensaje y presiona Enter..." 
-          class="message-input"
-          @keyup.enter="enviarMensaje"
-        />
+      <div v-if="historialAgrupado.length === 0" class="no-messages">
+        <p>No hay avisos recientes.</p>
+        <small>Escribe el primer aviso abajo 👇</small>
       </div>
 
+    </div>
+
+    <div class="chat-input-area">
+      <input 
+        v-model="nuevoMensaje" 
+        @keyup.enter="enviarMensaje"
+        type="text" 
+        placeholder="Escribe un aviso para los clientes..." 
+        class="input-message" 
+      />
+      <button class="btn-send" @click="enviarMensaje">
+        ➤
+      </button>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, nextTick } from 'vue';
+import { ref, onMounted, nextTick } from 'vue';
+import avisosService from '@/services/avisosService';
 
 const nuevoMensaje = ref('');
 const historyContainer = ref(null);
+const historialAgrupado = ref([]); 
 
-// Datos simulados (Mock Data) idénticos a tu imagen
-const historial = ref([
-  {
-    fecha: '26 de septiembre',
-    mensajes: [
-      { id: 1, texto: 'Hoy 27 de septiembre se cierra temprano, el horario sera de 7am a 10 pm. Saludos cordiales.', hora: '9:10 pm' }
-    ]
-  },
-  {
-    fecha: '30 de septiembre',
-    mensajes: [
-      { id: 2, texto: 'El dia de mañana por ser primero de mes no se abrira para que tomen sus precausiones. Saludos.', hora: '9:00 am' }
-    ]
+const cargarAvisos = async () => {
+  try {
+    const response = await avisosService.getAvisos();
+    const data = response.results || response; 
+    procesarAvisos(data);
+    hacerScrollAbajo();
+  } catch (error) {
+    console.error("Error cargando avisos:", error);
   }
-]);
+};
 
-// Función para enviar mensaje
-const enviarMensaje = () => {
-  if (nuevoMensaje.value.trim() === '') return;
-
-  const ahora = new Date();
-  // Formato de hora simple (ej. 10:30 am)
-  const horaActual = ahora.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }).toLowerCase();
+const procesarAvisos = (avisos) => {
+  const grupos = {};
   
-  // Lógica simple para agregar al día de "Hoy" (simulado)
-  // En un sistema real, verificarías si la última fecha es hoy
-  const ultimoGrupo = historial.value[historial.value.length - 1];
-  
-  // Simulamos agregar al último grupo para el ejemplo visual
-  ultimoGrupo.mensajes.push({
-    id: Date.now(),
-    texto: nuevoMensaje.value,
-    hora: horaActual
+  // Procesamos la respuesta del backend
+  avisos.forEach(aviso => {
+    // Usamos los campos 'fecha_formato' y 'hora_formato' que definimos en el Serializer de Django
+    const fechaKey = aviso.fecha_formato || 'Fecha desconocida'; 
+    
+    if (!grupos[fechaKey]) {
+      grupos[fechaKey] = {
+        fecha: fechaKey,
+        mensajes: []
+      };
+    }
+    
+    grupos[fechaKey].mensajes.push({
+      id: aviso.id,
+      texto: aviso.mensaje,
+      hora: aviso.hora_formato || '--:--'
+    });
   });
 
-  nuevoMensaje.value = ''; // Limpiar input
+  historialAgrupado.value = Object.values(grupos);
+};
 
-  // Auto-scroll al final
+const enviarMensaje = async () => {
+  if (nuevoMensaje.value.trim() === '') return;
+
+  try {
+    await avisosService.createAviso(nuevoMensaje.value);
+    nuevoMensaje.value = '';
+    await cargarAvisos(); // Recargar para ver el nuevo mensaje
+  } catch (error) {
+    console.error("Error enviando:", error);
+    alert("No se pudo enviar. Verifica tu conexión o permisos.");
+  }
+};
+
+const hacerScrollAbajo = () => {
   nextTick(() => {
     if (historyContainer.value) {
       historyContainer.value.scrollTop = historyContainer.value.scrollHeight;
     }
   });
 };
+
+onMounted(() => {
+  cargarAvisos();
+});
 </script>
 
 <style scoped>
 .chats-container {
-  padding: 20px;
-  height: 100%;
-  box-sizing: border-box;
-}
-
-/* Tarjeta Principal */
-.chat-card {
-  background: white;
-  border-radius: 20px;
-  box-shadow: 0 4px 20px rgba(0,0,0,0.03);
-  height: 85vh; /* Altura fija para que parezca una app de chat */
   display: flex;
   flex-direction: column;
-  overflow: hidden; /* Para que el contenido no se salga de los bordes redondeados */
+  height: calc(100vh - 100px); /* Ajuste para que no se salga de la pantalla */
+  background: #f0f2f5;
+  border-radius: 15px;
+  overflow: hidden;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+  margin: 20px;
 }
 
-.card-header {
-  padding: 25px;
-  /* border-bottom: 1px solid #f0f0f0; Opcional si quieres línea arriba */
+.header-section {
+  background: #fff;
+  padding: 15px 20px;
+  border-bottom: 1px solid #e0e0e0;
 }
+.header-section h2 { margin: 0; color: #7C5CFF; font-size: 1.5rem; }
 
-.card-header h3 {
-  margin: 0;
-  font-size: 1.5rem;
-  color: #1F1F1F;
-  font-weight: 500;
-}
-
-/* Área de Historial (Scrollable) */
 .chat-history {
-  flex-grow: 1; /* Ocupa todo el espacio disponible */
-  padding: 20px 40px;
-  overflow-y: auto; /* Scroll vertical */
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
   display: flex;
   flex-direction: column;
-  gap: 30px;
+  gap: 15px;
 }
 
-/* Etiquetas de Fecha (Gris Oscuro) */
-.date-badge-container {
-  display: flex;
-  justify-content: center;
-  margin-bottom: 15px;
-}
-
-.date-badge {
-  background-color: #757575; /* Gris oscuro según imagen */
-  color: white;
-  padding: 8px 25px;
-  border-radius: 20px;
-  font-size: 0.9rem;
-  font-weight: 500;
-}
-
-/* Burbujas de Mensaje (Gris Claro) */
-.message-bubble {
-  background-color: #D9D9D9; /* Gris claro según imagen */
-  padding: 20px;
-  border-radius: 20px;
-  position: relative;
-  margin-bottom: 15px;
-  color: #1F1F1F;
-  font-size: 1.1rem;
-  line-height: 1.5;
-  width: fit-content;
-  max-width: 80%; /* Para que no se estire demasiado */
-}
-
-/* Alineación de mensajes */
 .message-group {
   display: flex;
   flex-direction: column;
-  align-items: center; /* Centrar fechas y burbujas como en el diseño */
+  gap: 10px;
 }
 
-/* Hora del mensaje */
-.message-time {
-  display: block;
-  text-align: right;
-  font-size: 0.85rem;
+.date-divider {
+  text-align: center;
+  margin: 10px 0;
+}
+.date-divider span {
+  background: #e1e4e8;
   color: #555;
-  margin-top: 5px;
-  font-weight: 500;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  font-weight: bold;
 }
 
-.message-text {
-  margin: 0;
+.message-card {
+  background: #fff;
+  padding: 10px 15px;
+  border-radius: 0 15px 15px 15px; /* Estilo burbuja de chat */
+  align-self: flex-start;
+  max-width: 70%;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+  position: relative;
 }
 
-/* Línea divisoria antes del input */
-.divider {
-  height: 1px;
-  background-color: #ccc;
-  width: 100%;
-}
-
-/* Área de Input (Footer) */
-.input-area {
-  padding: 25px 40px;
-  background-color: white;
-}
-
-.message-input {
-  width: 100%;
-  padding: 15px 25px;
-  border-radius: 30px; /* Forma de píldora */
-  border: none;
-  background-color: #D9D9D9; /* Fondo gris del input */
-  font-size: 1.1rem;
+.message-content {
   color: #333;
+  font-size: 1rem;
+  line-height: 1.4;
+}
+
+.message-time {
+  font-size: 0.7rem;
+  color: #999;
+  text-align: right;
+  margin-top: 5px;
+}
+
+.no-messages {
+  text-align: center;
+  margin-top: 50px;
+  color: #888;
+}
+
+/* Área de input fija abajo */
+.chat-input-area {
+  background: #fff;
+  padding: 15px;
+  display: flex;
+  gap: 10px;
+  border-top: 1px solid #e0e0e0;
+}
+
+.input-message {
+  flex: 1;
+  padding: 12px 15px;
+  border: 1px solid #ddd;
+  border-radius: 25px;
   outline: none;
-  transition: background 0.3s;
+  font-size: 1rem;
+  transition: border-color 0.3s;
+}
+.input-message:focus {
+  border-color: #7C5CFF;
 }
 
-.message-input:focus {
-  background-color: #e6e6e6; /* Ligeramente más claro al escribir */
+.btn-send {
+  background: #7C5CFF;
+  color: white;
+  border: none;
+  width: 45px;
+  height: 45px;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 1.2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s;
 }
-
-.message-input::placeholder {
-  color: #777;
+.btn-send:hover {
+  transform: scale(1.1);
+  background: #6a4be0;
 }
 </style>
